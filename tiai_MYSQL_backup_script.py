@@ -32,8 +32,6 @@ config.read(CREDENTIALS_PATH)
 DB_USR = config['credentials']['DB_USR']
 DB_PWD = config['credentials']['DB_PWD']
 
-UPDATED_EMAIL_SCRIPT_PATH = "/backup/scripts/MYSQL_backup_error_notif.py"
-
 def sanitize_command(command):
     """Sanitize the command by replacing sensitive information."""
     sanitized_command = [
@@ -41,27 +39,6 @@ def sanitize_command(command):
         for arg in command
     ]
     return sanitized_command
-
-def send_error_email():
-    subject = "[ERROR] CloudSQL Backup Error"
-    error_lines = []
-
-    # Read the log file and capture lines containing "ERROR"
-    with open(log_filename) as log_file:
-        for line in log_file:
-            if "ERROR" in line:
-                error_lines.append(line.strip())
-
-    # Join the error lines into a single string with HTML line breaks
-    body = '<br>'.join(error_lines)
-
-    command = [
-        "python3", UPDATED_EMAIL_SCRIPT_PATH, subject, body
-    ]
-    try:
-        subprocess.run(command, check=True)
-    except subprocess.CalledProcessError as e:
-        logging.error("Failed to send error email: {}".format(e))
 
 def load_server_list(file_path):
     """Load the server list from a given file."""
@@ -71,7 +48,6 @@ def load_server_list(file_path):
         return config.sections(), config
     except Exception as e:
         logging.error("Failed to load server list: {}".format(e))
-        send_error_email()
         return [], None
 
 def stream_database_to_gcs(dump_command, gcs_path, db):
@@ -103,8 +79,7 @@ def stream_database_to_gcs(dump_command, gcs_path, db):
         elapsed_time = time.time() - start_time
         logging.info("Dumped and streamed database {} to GCS successfully in {:.2f} seconds.".format(db, elapsed_time))
     except Exception as e:
-        logging.error("Unexpected error streaming database {} to GCS: {}".format(db, e))
-        send_error_email()
+        logging.error("Unexpected error streaming database {} to GCS: {}".format(db))
 
 def main():
     """Main function to execute the backup process."""
@@ -124,7 +99,6 @@ def main():
             servers.append((section, host, ssl, [db.strip() for db in databases]))
         except KeyError as e:
             logging.error("Missing configuration for server '{}': {}".format(section, e))
-            send_error_email()
     for server in servers:
         SERVER, HOST, SSL, DB_LIST = server
         use_ssl = SSL.lower() == "y"
@@ -150,7 +124,6 @@ def main():
                 stream_database_to_gcs(dump_command, gcs_path, db)
         except Exception as e:
             logging.error("Error processing server {}: {}".format(SERVER, e))
-            send_error_email()
 
     logging.info("==== Backup Process Completed ====")
 
